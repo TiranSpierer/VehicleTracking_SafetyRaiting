@@ -81,3 +81,40 @@ def buildRoi(cap):
     max_index = np.argmax(areas)
     cnt=contours[max_index]
     return cv2.boundingRect(cnt)
+
+
+
+
+
+
+
+    def timeGaussian(first,second,third):
+    return first//4 + second//2 + third//4
+
+def time(cap):
+    _,one = cap.read()
+    two = one.copy()
+    _,three = cap.read()
+    out = cv2.VideoWriter('project.mp4',cv2.VideoWriter_fourcc(*'DIVX'), 23, size)
+
+    result = timeGaussian(one,one,three)
+    cv2.imshow('4',cv2.resize(result,(960,600)))
+    out.write(result)
+
+    while True:
+        one = two
+        two = three
+        ret,three = cap.read()
+        if ret==False: break
+        result = timeGaussian(one,two,three)
+        cv2.imshow('4',cv2.resize(result,(960,600)))
+        out.write(result)
+ 
+        if cv2.waitKey(1)==ord('q'): break
+
+    result = timeGaussian(one,two,two)
+    cv2.imshow('4',cv2.resize(result,(960,600)))
+    out.write(result)
+
+    out.release()       
+    cv2.destroyAllWindows()
