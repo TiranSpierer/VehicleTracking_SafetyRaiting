@@ -37,3 +37,47 @@ while ret:
         break
 cap.release()
 cv2.destroyAllWindows()    
+
+
+
+
+
+
+
+
+def buildRoi(cap):
+    ret,oldFrame = cap.read()
+    oldGrayFrame = cv2.cvtColor(oldFrame, cv2.COLOR_BGR2GRAY) 
+    blank = np.zeros(oldFrame.shape, np.uint8)
+
+    while ret:
+        ret, newFrame = cap.read()
+        if ret == False: break
+    
+        newGrayFrame = cv2.cvtColor(newFrame, cv2.COLOR_BGR2GRAY) 
+        result = cv2.absdiff(newGrayFrame,oldGrayFrame)
+        if np.max(result)>10 :
+            threshold = 50
+            result[result>=threshold]=255
+            result[result<threshold]=0
+            result = cv2.GaussianBlur(result,(11,11),5)
+    
+            contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+            for cnt in contours:
+                if cv2.contourArea(cnt)>300:
+                    cv2.drawContours(blank,cnt,-1,(0,255,0),2)  
+
+        oldGrayFrame = newGrayFrame
+    
+    
+    kernel = np.ones((7,7),np.uint8)
+    opening = cv2.morphologyEx(blank, cv2.MORPH_OPEN, kernel)
+    
+    
+    grayopening = cv2.cvtColor(opening,cv2.COLOR_BGR2GRAY)
+    contours,_ = cv2.findContours(grayopening,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+    areas = [cv2.contourArea(cnt) for cnt in contours]
+    max_index = np.argmax(areas)
+    cnt=contours[max_index]
+    return cv2.boundingRect(cnt)
