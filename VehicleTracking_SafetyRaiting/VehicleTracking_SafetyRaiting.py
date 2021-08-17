@@ -31,15 +31,26 @@ def buildRoi(path):
             contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
             for cnt in contours:
                 if cv2.contourArea(cnt)>300:
-                    cv2.drawContours(blank,cnt,-1,(0,255,0),2)  
+                    cv2.drawContours(blank,cnt,-1,(0,255,0),2)
+                    
         oldGrayFrame = newGrayFrame
     
-    
-    kernel = np.ones((7,7),np.uint8)
+    kernel = np.ones((8, 8),np.uint8)
     opening = cv2.morphologyEx(blank, cv2.MORPH_OPEN, kernel)
     grayopening = cv2.cvtColor(opening,cv2.COLOR_BGR2GRAY)
     contours,_ = cv2.findContours(grayopening,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-
+    closing = cv2.morphologyEx(grayopening, cv2.MORPH_CLOSE, kernel)
+    
+    #create the black and white matrix of road and export it
+    closing[closing!=0]=255
+    cv2.imwrite("blackAndWhiteRoad.jpg", closing)
+    
+    
+    cv2.imshow('closing', closing)
+    cv2.waitKey(5000)
+    cv2.destroyAllWindows()
+                    
+                    
     areas = [cv2.contourArea(cnt) for cnt in contours]
     max_index = np.argmax(areas)
     cnt=contours[max_index]
@@ -57,15 +68,15 @@ def buildRoi(path):
         ret,frame=crop.read()
         if ret==False: break
         cv2.rectangle(frame,(x,y),(x+w,y+h),(0,255,0),3)
-        cv2.imshow('g',frame)
+        #cv2.imshow('g',frame)
         roi = frame[y:y+h,x:x+w]
-        cv2.imshow('f',roi)
+        #cv2.imshow('f',roi)
         if cv2.waitKey(10)==27:break
             
         out.write(roi)
         
     cv2.destroyAllWindows()
-    out.release()       
+    out.release()     
 
 
 
