@@ -2,158 +2,99 @@ import cv2
 import numpy as np
 
 
-path = 'Video/1.mp4'
-
-buildRoi(path)
-timeDerivative()
-subtraction()
-
-
 def buildRoi(path):
     cap = cv2.VideoCapture(path)
+    
+    frameAmount = cap.get(7)   
+    trainTestRatio = 0.1
+    frameCounter = 1
     
     ret,oldFrame = cap.read()
     oldGrayFrame = cv2.cvtColor(oldFrame, cv2.COLOR_BGR2GRAY) 
     blank = np.zeros(oldFrame.shape, np.uint8)
 
-    while ret:
+    while ret and frameCounter < (frameAmount*trainTestRatio):
+        frameCounter+=1
+        
         ret, newFrame = cap.read()
         if ret == False: break
+
+        newGrayFrame = cv2.cvtColor(newFrame, cv2.COLOR_BGR2GRAY) 
+        result = cv2.absdiff(newGrayFrame,oldGrayFrame)
+
+        if np.mean(result)!=0: 
+            result = cv2.threshold(result, 30, 255, cv2.THRESH_BINARY)[1]
+            result = cv2.GaussianBlur(result,(11,11),7)
+
+            contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+            for cnt in contours:
+                if cv2.contourArea(cnt)>150:
+                    cv2.drawContours(blank,cnt,-1,(0,255,0),6)  
+            cv2.imshow('blank',cv2.resize(blank,(640,400)))   
+
+        oldGrayFrame = newGrayFrame
+
+        if cv2.waitKey(1)==ord('q'): break
+    input()
+    cv2.destroyAllWindows()  
+        
+    #prefoem opening and closing operation for \\\"cleaning\\\" the image
+    kernel = np.ones((9, 9),np.uint8)
+    opening = cv2.morphologyEx(blank, cv2.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    cv2.imshow('f',cv2.resize(opening,(640,400)))
+    cv2.imshow('g',cv2.resize(closing,(640,400)))
+    cv2.waitKey(1)
+    input()
+    cv2.destroyAllWindows()
     
+    #create photo of the Roi for later
+    closing = cv2.cvtColor(closing,cv2.COLOR_BGR2GRAY)
+    closing[closing!=0]=255
+    cv2.imwrite("blackAndWhiteRoad.jpg", closing)   
+    cv2.destroyAllWindows()
+        
+        
+    cap.release()
+    cv2.destroyAllWindows() 
+
+
+
+    def frameDiffer(path):
+    cap = cv2.VideoCapture(path)
+    ret,oldFrame = cap.read()
+    oldGrayFrame = cv2.cvtColor(oldFrame, cv2.COLOR_BGR2GRAY) 
+    
+    while ret:
+        Roi = cv2.imread('blackAndWhiteRoad.jpg')
+        ret, newFrame = cap.read()
+        if ret == False: break
         newGrayFrame = cv2.cvtColor(newFrame, cv2.COLOR_BGR2GRAY) 
         result = cv2.absdiff(newGrayFrame,oldGrayFrame)
         if np.max(result)>10 :
-            threshold = 50
+            threshold = 30
             result[result>=threshold]=255
             result[result<threshold]=0
-            result = cv2.GaussianBlur(result,(11,11),5)
+            result = cv2.GaussianBlur(result,(7,7),4)
     
             contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
             for cnt in contours:
-                if cv2.contourArea(cnt)>300:
-                    cv2.drawContours(blank,cnt,-1,(0,255,0),2)
-                    
-        oldGrayFrame = newGrayFrame
-    
-    kernel = np.ones((8, 8),np.uint8)
-    opening = cv2.morphologyEx(blank, cv2.MORPH_OPEN, kernel)
-    grayopening = cv2.cvtColor(opening,cv2.COLOR_BGR2GRAY)
-    contours,_ = cv2.findContours(grayopening,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    closing = cv2.morphologyEx(grayopening, cv2.MORPH_CLOSE, kernel)
-    
-    #create the black and white matrix of road and export it
-    closing[closing!=0]=255
-    cv2.imwrite("blackAndWhiteRoad.jpg", closing)
-    
-    
-    cv2.imshow('closing', closing)
-    cv2.waitKey(5000)
-    cv2.destroyAllWindows()
-                    
-                    
-    areas = [cv2.contourArea(cnt) for cnt in contours]
-    max_index = np.argmax(areas)
-    cnt=contours[max_index]
-    x,y,w,h = cv2.boundingRect(cnt)
-    
-    
-    #create the crop video
-    hight,width=newGrayFrame.shape
-    size = (width,hight)
-    crop = cv2.VideoCapture(path)
-    
-    out = cv2.VideoWriter('cropVideo.mp4',cv2.VideoWriter_fourcc(*'DIVX'), 23, (w,h))
-    
-    while True:
-        ret,frame=crop.read()
-        if ret==False: break
-        cv2.rectangle(frame,(x,y),(x+w,y+h),(0,255,0),3)
-        #cv2.imshow('g',frame)
-        roi = frame[y:y+h,x:x+w]
-        #cv2.imshow('f',roi)
-        if cv2.waitKey(10)==27:break
-            
-        out.write(roi)
-        
-    cv2.destroyAllWindows()
-    out.release()     
+                if cv2.contourArea(cnt)>100:
+                    cv2.drawContours(Roi,cnt,-1,(0,255,0),2)  
 
-
-
-
-
-
-def timeGaussian(first,second,third):
-    return first//4 + second//2 + third//4
-
-def timeDerivative():
-    path = 'cropVideo.avi'
-    cap = cv2.VideoCapture(path)
-    _,one = cap.read()
-    two = one.copy()
-    _,three = cap.read()
-    h,w,_=one.shape
-    size = (w,h)
-    out = cv2.VideoWriter('cropGaussianVideo.mp4',cv2.VideoWriter_fourcc(*'DIVX'), 23, size)
-
-    result = timeGaussian(one,one,three)
-    cv2.imshow('4',cv2.resize(result,(960,600)))
-    out.write(result)
-
-    while True:
-        one = two
-        two = three
-        ret,three = cap.read()
-        if ret==False: break
-        result = timeGaussian(one,two,three)
-        cv2.imshow('4',cv2.resize(result,(960,600)))
-        out.write(result)
- 
-        if cv2.waitKey(1)==ord('q'): break
-
-    result = timeGaussian(one,two,two)
-    cv2.imshow('4',cv2.resize(result,(960,600)))
-    out.write(result)
-
-    out.release()       
-    cv2.destroyAllWindows()
-
-
-
-
-
-def subtraction():
-    path = 'cropGaussianVideo.mp4'
-    cap = cv2.VideoCapture(path)
-    _,oldFrame = cap.read()
-    h,w,_=oldFrame.shape
-
-    oldGrayFrame = cv2.cvtColor(oldFrame,cv2.COLOR_BGR2GRAY)
-    out1 = cv2.VideoWriter('cropGaussianMaskVideo.mp4',cv2.VideoWriter_fourcc(*'DIVX'), 23, (w,h))
-    out2 = cv2.VideoWriter('cropGaussianContoursVideo.mp4',cv2.VideoWriter_fourcc(*'DIVX'), 23, (w,h))
-    
-    while True:
-        ret, newFrame = cap.read()
-        if ret == False: break
-    
-        newGrayFrame = cv2.cvtColor(newFrame, cv2.COLOR_BGR2GRAY) 
-        result = cv2.absdiff(newGrayFrame,oldGrayFrame)
-        
-        threshold = 30
-        result[result>=threshold]=255
-        result[result<threshold]=0
-        result = cv2.GaussianBlur(result,(11,11),7)
-    
-        contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        for cnt in contours:
-            if cv2.contourArea(cnt)>250:
-                cv2.drawContours(newFrame,cnt,-1,(0,255,0),2)  
-        out1.write(cv2.cvtColor(result,cv2.COLOR_GRAY2BGR))
-        out2.write(newFrame)  
+            cv2.imshow('result',cv2.resize(Roi,(960,600)))  
+            cv2.imshow('newFrame',cv2.resize(newFrame,(960,600)))   
     
         oldGrayFrame = newGrayFrame
     
         if cv2.waitKey(1)==ord('q'): break
-    out1.release()
-    out2.release()
-    cv2.destroyAllWindows()    
+    cap.release()
+    cv2.destroyAllWindows()  
+
+
+
+
+path = 'video/4.mp4'
+#buildRoi(path)
+frameDiffer(path)
+cv2.destroyAllWindows() 
