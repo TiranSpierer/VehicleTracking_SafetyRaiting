@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import EuclideanDistTracker
 
 def resultPath(filePath):
     lastDot = filePath.rfind('.')
@@ -39,14 +38,8 @@ def preProcessing(path):
         grayframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         #image processing
-        result = cv2.absdiff(grayframe,oldGrayFrame)
-        result = cv2.GaussianBlur(result,(5,5),5)
-        result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
-        result = cv2.GaussianBlur(result,(7,7),5)
-        result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
-        kernel = np.ones((20,20),np.uint8)
-        result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
-        result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel)
+        result = cv2.threshold(result, 30, 255, cv2.THRESH_BINARY)[1]
+        result = cv2.GaussianBlur(result,(11,11),7)
         
         #spread the contours on blank
         contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
@@ -58,11 +51,9 @@ def preProcessing(path):
     
     #more image processing on the result
     blank = cv2.cvtColor(blank,cv2.COLOR_BGR2GRAY)
-    result = cv2.threshold(blank, 120, 255, cv2.THRESH_BINARY)[1]
-    result = cv2.GaussianBlur(result,(5,5),10)
-    kernel = np.ones((100,100),np.uint8) 
-    result = cv2.threshold(result, 130, 255, cv2.THRESH_BINARY)[1]
-    result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
+    kernel = np.ones((9, 9),np.uint8)
+    opening = cv2.morphologyEx(blank, cv2.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
     
     #save the outcome
     cv2.imwrite(grayScaleRoad, result)   
@@ -70,7 +61,6 @@ def preProcessing(path):
 
 
 def robustTimeDerivativeDistribution(path):
-    tracker = EuclideanDistTracker.EuclideanDistTracker()
     Roi = cv2.imread(grayScaleRoad)
     cap = cv2.VideoCapture(path)
     
@@ -84,7 +74,6 @@ def robustTimeDerivativeDistribution(path):
     out = cv2.VideoWriter(resultPath(path), cv2.VideoWriter_fourcc(*'DIVX'), 23, size)
     
     while True:
-        detection = []
         ret, three = cap.read()
         if ret == False: break
             
@@ -96,7 +85,8 @@ def robustTimeDerivativeDistribution(path):
         result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
         result = cv2.GaussianBlur(result,(7,7),5)
         result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
-        kernel = np.ones((20,20),np.uint8)
+        
+        kernel = np.ones((10,10),np.uint8)
         result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
         result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel)
         
@@ -105,23 +95,17 @@ def robustTimeDerivativeDistribution(path):
         for cnt in contours:
             if cv2.contourArea(cnt)>2000:
                 x,y,w,h = cv2.boundingRect(cnt)
-                detection.append([x,y,w,h])
-                
-        #draw id and box in color base on their position
-        boxes_ids = tracker.update(detection)  
-        for box_id in boxes_ids:
-            x,y,w,h,id = box_id
-            cv2.putText(three,str(id),(x,y-15),cv2.FONT_HERSHEY_COMPLEX,1,(255,0,0),2)    
-            cx = (x+x+w)//2
-            cy = (y+y+h)//2
-            if sum(Roi[cy,cx])!=0: 
-                cv2.rectangle(three,(x,y),(x+w,y+h),(0,255,0),3)
-            else:
-                if cx<three.shape[1]//2:                
-                    cv2.rectangle(three,(x,y),(x+w,y+h),(0,165,255),3)
+                cx = (x+x+w)//2
+                cy = (y+y+h)//2
+                if sum(Roi[cy,cx])!=0: 
+                    cv2.rectangle(three,(x,y),(x+w,y+h),(0,255,0),3)
                 else:
-                    cv2.rectangle(three,(x,y),(x+w,y+h),(0,0,255),3)
-                out.write(three)
+                    if cx<three.shape[1]//2:                
+                        cv2.rectangle(three,(x,y),(x+w,y+h),(0,165,255),3)
+                    else:
+                        cv2.rectangle(three,(x,y),(x+w,y+h),(0,0,255),3)
+                
+        out.write(three)
         
         #show the output            
         cv2.imshow('f',three)
