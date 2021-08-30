@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-
+import EuclideanDistTracker
 
 def resultPath(filePath):
     lastDot = filePath.rfind('.')
@@ -27,41 +27,54 @@ def showVideo(path):
 
 grayScaleRoad = "grayScaleRoad.jpg"
 
-def buildRoi(path):
+def preProcessing(path):
     cap = cv2.VideoCapture(path)
     ret,oldFrame = cap.read()
     oldGrayFrame = cv2.cvtColor(oldFrame, cv2.COLOR_BGR2GRAY) 
     blank = np.zeros(oldFrame.shape, np.uint8)
-    frames = []
-
+    
+    #create Roi base on the 10% first frame
     for _ in range(int(cap.get(7)*0.1)): 
         ret, frame = cap.read()
         grayframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frames.append(grayframe)  
-        result = cv2.absdiff(grayframe,oldGrayFrame)
-
-        if np.mean(result)!=0: 
-            result = cv2.threshold(result, 30, 255, cv2.THRESH_BINARY)[1]
-            result = cv2.GaussianBlur(result,(11,11),7)
-            contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-
-            for cnt in contours:
-                if cv2.contourArea(cnt)>150:
-                    cv2.drawContours(blank,cnt,-1,(255,255,255),20)
-
-        oldGrayFrame = grayframe
         
+        #image processing
+        result = cv2.absdiff(grayframe,oldGrayFrame)
+        result = cv2.GaussianBlur(result,(5,5),5)
+        result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
+        result = cv2.GaussianBlur(result,(7,7),5)
+        result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
+        kernel = np.ones((20,20),np.uint8)
+        result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
+        result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel)
+        
+        #spread the contours on blank
+        contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        for cnt in contours:
+            if cv2.contourArea(cnt)>150:
+                cv2.drawContours(blank,cnt,-1,(255,255,255),20)
+        #for continuesly
+        oldGrayFrame = grayframe
+    
+    #more image processing on the result
     blank = cv2.cvtColor(blank,cv2.COLOR_BGR2GRAY)
-    median = np.median(frames, axis=0).astype(dtype=np.uint8) 
-    result = median*blank
-    result = cv2.threshold(result, 120, 255, cv2.THRESH_BINARY)[1]
+    result = cv2.threshold(blank, 120, 255, cv2.THRESH_BINARY)[1]
     result = cv2.GaussianBlur(result,(5,5),10)
+    kernel = np.ones((100,100),np.uint8) 
+    result = cv2.threshold(result, 130, 255, cv2.THRESH_BINARY)[1]
+    result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
+    
+    #save the outcome
     cv2.imwrite(grayScaleRoad, result)   
     cap.release()
 
 
-def frameDiffer(path):
+def robustTimeDerivativeDistribution(path):
+    tracker = EuclideanDistTracker.EuclideanDistTracker()
+    Roi = cv2.imread(grayScaleRoad)
     cap = cv2.VideoCapture(path)
+    
+    #initialize the first loop parameters
     ret,one = cap.read()
     ret,two = cap.read()
     oneGray = cv2.cvtColor(one, cv2.COLOR_BGR2GRAY) 
@@ -71,39 +84,62 @@ def frameDiffer(path):
     out = cv2.VideoWriter(resultPath(path), cv2.VideoWriter_fourcc(*'DIVX'), 23, size)
     
     while True:
-        Roi = cv2.imread(grayScaleRoad)
-
+        detection = []
         ret, three = cap.read()
-        if ret == False: 
-            break
+        if ret == False: break
             
         threeGray = cv2.cvtColor(three, cv2.COLOR_BGR2GRAY) 
         result = cv2.absdiff(threeGray,oneGray)
+        
+        #image processing    
         result = cv2.GaussianBlur(result,(5,5),5)
         result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
         result = cv2.GaussianBlur(result,(7,7),5)
         result = cv2.threshold(result, 10, 255, cv2.THRESH_BINARY)[1]
-        kernel = np.ones((10,10),np.uint8)
+        kernel = np.ones((20,20),np.uint8)
         result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel)
-        contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-
-        for cnt in contours:
-            if cv2.contourArea(cnt)>200:
-                x,y,w,h = cv2.boundingRect(cnt)
-                cx = (x+x+w)//2
-                cy = (y+y+h)//2
-                if sum(Roi[cy,cx])==0: 
-                    cv2.drawContours(three,cnt,-1,(0,0,255),2) 
-                else:
-                    cv2.drawContours(three,cnt,-1,(0,255,0),2) 
+        result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel)
         
-        out.write(three)
+        #find moving objects
+        contours,_ = cv2.findContours(result,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        for cnt in contours:
+            if cv2.contourArea(cnt)>2000:
+                x,y,w,h = cv2.boundingRect(cnt)
+                detection.append([x,y,w,h])
+                
+        #draw id and box in color base on their position
+        boxes_ids = tracker.update(detection)  
+        for box_id in boxes_ids:
+            x,y,w,h,id = box_id
+            cv2.putText(three,str(id),(x,y-15),cv2.FONT_HERSHEY_COMPLEX,1,(255,0,0),2)    
+            cx = (x+x+w)//2
+            cy = (y+y+h)//2
+            if sum(Roi[cy,cx])!=0: 
+                cv2.rectangle(three,(x,y),(x+w,y+h),(0,255,0),3)
+            else:
+                if cx<three.shape[1]//2:                
+                    cv2.rectangle(three,(x,y),(x+w,y+h),(0,165,255),3)
+                else:
+                    cv2.rectangle(three,(x,y),(x+w,y+h),(0,0,255),3)
+                out.write(three)
+        
+        #show the output            
+        cv2.imshow('f',three)
+        cv2.waitKey(30)
+        if cv2.waitKey(20) == 27: 
+            break
+
+        #for continuesly
         oneGray = twoGray
         twoGray = threeGray
         
 
 def runProgram(path):
-    buildRoi(path)
-    frameDiffer(path)
+    preProcessing(path)
+    robustTimeDerivativeDistribution(path)
     newPath = resultPath(path)
-    showVideo(newPath)
+    #showVideo(newPath)
+
+    roadDict(q, w, e, r, t):
+        #..........
+
